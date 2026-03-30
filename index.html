@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bite Timer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&display=swap');
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --ring-track: #1e1e1e;
+    --accent: #e8f55a;
+    --accent-dim: #a8b33a;
+    --text: #f0f0f0;
+    --text-muted: #555;
+    --danger: #ff4d4d;
+    --radius: 50%;
+    --watch-size: 320px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .watch-frame {
+    width: var(--watch-size);
+    height: var(--watch-size);
+    border-radius: var(--radius);
+    background: var(--bg);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow:
+      0 0 0 6px #1a1a1a,
+      0 0 0 10px #111,
+      0 0 60px rgba(0,0,0,0.9),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    overflow: hidden;
+  }
+
+  /* Subtle background texture */
+  .watch-frame::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 30%, rgba(232,245,90,0.03) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* SVG ring */
+  .ring-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .ring-track {
+    fill: none;
+    stroke: var(--ring-track);
+    stroke-width: 12;
+  }
+
+  .ring-progress {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 12;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.9s linear, stroke 0.3s ease;
+    filter: drop-shadow(0 0 8px rgba(232,245,90,0.6));
+  }
+
+  .ring-progress.urgent {
+    stroke: var(--danger);
+    filter: drop-shadow(0 0 10px rgba(255,77,77,0.7));
+  }
+
+  /* Center content */
+  .center {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    z-index: 2;
+  }
+
+  .label {
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .countdown {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 88px;
+    line-height: 1;
+    color: var(--text);
+    letter-spacing: 0.02em;
+    transition: color 0.3s ease;
+  }
+
+  .countdown.urgent {
+    color: var(--danger);
+    animation: pulse 0.5s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse {
+    from { opacity: 1; }
+    to { opacity: 0.6; }
+  }
+
+  .sub-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  /* Bottom button row */
+  .btn-row {
+    position: absolute;
+    bottom: 38px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 3;
+  }
+
+  /* Countdown + pause inline row */
+  .countdown-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Settings icon button — left of countdown */
+  .settings-btn {
+    background: transparent;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: color 0.15s ease, transform 0.15s ease;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+
+  .settings-btn:hover { color: var(--accent-dim); }
+  .settings-btn:active { transform: scale(0.88) rotate(30deg); }
+  .settings-btn svg { width: 16px; height: 16px; }
+
+  /* Settings overlay */
+  .settings-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(10,10,10,0.96);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .settings-overlay.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .settings-title {
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .settings-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .duration-display {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 64px;
+    line-height: 1;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+
+  .duration-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .dur-btn {
+    background: #1e1e1e;
+    border: 1px solid #2a2a2a;
+    color: var(--text);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease, transform 0.1s ease;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .dur-btn:active {
+    background: #2a2a2a;
+    transform: scale(0.92);
+  }
+
+  .settings-save {
+    background: var(--accent);
+    color: #1a1a00;
+    border: none;
+    border-radius: 14px;
+    padding: 7px 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease;
+    box-shadow: 0 0 12px rgba(232,245,90,0.2);
+  }
+
+  .settings-save:active {
+    transform: scale(0.93);
+    background: var(--accent-dim);
+  }
+
+  /* Color picker */
+  .settings-divider {
+    width: 40px;
+    height: 1px;
+    background: #222;
+  }
+
+  .color-swatches {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .swatch:active { transform: scale(0.88); }
+
+  .swatch.selected {
+    border-color: #fff;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.2);
+    transform: scale(1.15);
+  }
+
+  /* Bite button */
+  .bite-btn {
+    background: var(--accent);
+    color: #1a1a00;
+    border: none;
+    border-radius: 14px;
+    padding: 7px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 0 12px rgba(232,245,90,0.25);
+    white-space: nowrap;
+  }
+
+  .bite-btn:active {
+    transform: scale(0.93);
+    background: var(--accent-dim);
+    box-shadow: 0 0 6px rgba(232,245,90,0.1);
+  }
+
+  .bite-btn.running {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid #2a2a2a;
+    box-shadow: none;
+  }
+
+  /* Pause button — inline next to countdown */
+  .pause-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    white-space: nowrap;
+    display: none;
+    align-self: center;
+    margin-top: 6px;
+  }
+
+  .pause-btn.visible {
+    display: block;
+  }
+
+  .pause-btn.paused {
+    color: #f0a030;
+    border-color: #f0a030;
+    box-shadow: 0 0 8px rgba(240,160,48,0.2);
+  }
+
+  .pause-btn:active {
+    transform: scale(0.93);
+  }
+
+  /* Status dot */
+  .status-dot {
+    position: absolute;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s ease;
+  }
+
+  .status-dot.active {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(232,245,90,0.8);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Flash overlay on reset */
+  .flash {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(232,245,90,0.15);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 0.05s ease;
+  }
+
+  .flash.show {
+    opacity: 1;
+    animation: flashOut 0.4s ease forwards;
+  }
+
+  @keyframes flashOut {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* Bite count */
+  .bite-count {
+    position: absolute;
+    top: 72px;
+    right: 68px;
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .bite-count span {
+    display: block;
+    font-size: 18px;
+    font-family: 'Bebas Neue', sans-serif;
+    color: var(--accent-dim);
+    line-height: 1;
+  }
+</style>
+</head>
+<body>
+
+<div class="watch-frame" id="watchFrame">
+  <div class="flash" id="flash"></div>
+
+  <svg class="ring-svg" viewBox="0 0 320 320" id="ringSvg">
+    <circle class="ring-track" cx="160" cy="160" r="140"/>
+    <circle class="ring-progress" id="ringProgress" cx="160" cy="160" r="140"
+      stroke-dasharray="879.6" stroke-dashoffset="0"/>
+  </svg>
+
+  <div class="status-dot" id="statusDot"></div>
+
+  <div class="bite-count" id="biteCount">
+    <span id="biteNum">0</span>
+    bites
+  </div>
+
+  <div class="center">
+    <div class="label" id="topLabel">ready</div>
+    <div class="countdown-row">
+      <button class="settings-btn" id="settingsBtn" onclick="openSettings()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+      <div class="countdown" id="countdown">60</div>
+      <button class="pause-btn" id="pauseBtn" onclick="handlePause()">pause</button>
+    </div>
+    <div class="sub-label" id="subLabel">seconds</div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-title">timer duration</div>
+    <div class="duration-display" id="durationDisplay">60</div>
+    <div class="duration-controls">
+      <button class="dur-btn" onclick="changeDuration(-5)">−</button>
+      <div class="settings-label">seconds</div>
+      <button class="dur-btn" onclick="changeDuration(+5)">+</button>
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-label">accent color</div>
+    <div class="color-swatches" id="colorSwatches"></div>
+    <button class="settings-save" onclick="saveSettings()">save</button>
+  </div>
+
+  <div class="btn-row">
+    <button class="bite-btn" id="biteBtn" onclick="handleBite()">took a bite</button>
+  </div>
+</div>
+
+<script>
+  // — state —
+  let TOTAL = 60;
+  let pendingDuration = TOTAL;
+  let timeLeft = TOTAL;
+  let interval = null;
+  let running = false;
+  let paused = false;
+  let bites = 0;
+  const CIRCUMFERENCE = 2 * Math.PI * 140; // ~879.6
+
+  // — color palette —
+  const COLORS = [
+    { name: 'lime',    accent: '#e8f55a', dim: '#a8b33a', glow: '232,245,90'  },
+    { name: 'cyan',    accent: '#3ff0d4', dim: '#1fa888', glow: '63,240,212'  },
+    { name: 'violet',  accent: '#b57bff', dim: '#7c4db8', glow: '181,123,255' },
+    { name: 'rose',    accent: '#ff6b9d', dim: '#c0406a', glow: '255,107,157' },
+    { name: 'orange',  accent: '#ff9a3c', dim: '#c46e1a', glow: '255,154,60'  },
+    { name: 'sky',     accent: '#5bc8ff', dim: '#2a85b8', glow: '91,200,255'  },
+    { name: 'white',   accent: '#f0f0f0', dim: '#aaaaaa', glow: '240,240,240' },
+  ];
+  let pendingColorIdx = 0;
+  let activeColorIdx  = 0;
+
+  // — DOM refs —
+  const countdown = document.getElementById('countdown');
+  const ring = document.getElementById('ringProgress');
+  const btn = document.getElementById('biteBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const statusDot = document.getElementById('statusDot');
+  const flash = document.getElementById('flash');
+  const topLabel = document.getElementById('topLabel');
+  const biteNum = document.getElementById('biteNum');
+  const settingsOverlay = document.getElementById('settingsOverlay');
+  const durationDisplay = document.getElementById('durationDisplay');
+  const colorSwatches = document.getElementById('colorSwatches');
+
+  // Build swatches
+  COLORS.forEach((c, i) => {
+    const s = document.createElement('button');
+    s.className = 'swatch' + (i === 0 ? ' selected' : '');
+    s.style.background = c.accent;
+    s.setAttribute('aria-label', c.name);
+    s.onclick = () => {
+      pendingColorIdx = i;
+      colorSwatches.querySelectorAll('.swatch').forEach((el, j) => {
+        el.classList.toggle('selected', j === i);
+      });
+    };
+    colorSwatches.appendChild(s);
+  });
+
+  function applyColor(idx) {
+    const c = COLORS[idx];
+    const root = document.documentElement;
+    root.style.setProperty('--accent', c.accent);
+    root.style.setProperty('--accent-dim', c.dim);
+    // Update ring glow filter
+    ring.style.filter = `drop-shadow(0 0 8px rgba(${c.glow},0.6))`;
+    // Update flash bg
+    document.getElementById('flash').style.background = `rgba(${c.glow},0.15)`;
+    // Update bite-btn box shadow inline (handled via CSS var, just refresh)
+    btn.style.boxShadow = `0 0 12px rgba(${c.glow},0.25)`;
+  }
+
+  function openSettings() {
+    pendingDuration = TOTAL;
+    pendingColorIdx = activeColorIdx;
+    durationDisplay.textContent = pendingDuration;
+    colorSwatches.querySelectorAll('.swatch').forEach((el, j) => {
+      el.classList.toggle('selected', j === activeColorIdx);
+    });
+    settingsOverlay.classList.add('open');
+  }
+
+  function changeDuration(delta) {
+    pendingDuration = Math.max(5, Math.min(300, pendingDuration + delta));
+    durationDisplay.textContent = pendingDuration;
+  }
+
+  function saveSettings() {
+    TOTAL = pendingDuration;
+    activeColorIdx = pendingColorIdx;
+    applyColor(activeColorIdx);
+    if (!running && !paused) {
+      timeLeft = TOTAL;
+      countdown.textContent = TOTAL;
+      updateRing(TOTAL);
+    }
+    settingsOverlay.classList.remove('open');
+  }
+
+  function updateRing(seconds) {
+    const fraction = seconds / TOTAL;
+    const offset = CIRCUMFERENCE * (1 - fraction);
+    ring.style.strokeDashoffset = offset;
+  }
+
+  function setUrgent(yes) {
+    if (yes) {
+      ring.classList.add('urgent');
+      countdown.classList.add('urgent');
+    } else {
+      ring.classList.remove('urgent');
+      countdown.classList.remove('urgent');
+    }
+  }
+
+  function triggerFlash() {
+    flash.classList.remove('show');
+    void flash.offsetWidth;
+    flash.classList.add('show');
+  }
+
+  function vibrate() {
+    if ('vibrate' in navigator) {
+      navigator.vibrate([200, 80, 200, 80, 300]);
+    }
+  }
+
+  function resetTimer() {
+    vibrate();
+    triggerFlash();
+    timeLeft = TOTAL;
+    countdown.textContent = TOTAL;
+    updateRing(TOTAL);
+    setUrgent(false);
+    paused = false;
+    topLabel.textContent = 'chew & swallow';
+    btn.textContent = 'took a bite';
+    btn.classList.remove('running');
+    pauseBtn.classList.remove('visible', 'paused');
+    pauseBtn.textContent = 'pause';
+  }
+
+  function tick() {
+    timeLeft--;
+    countdown.textContent = timeLeft;
+    updateRing(timeLeft);
+
+    if (timeLeft <= 10) setUrgent(true);
+
+    if (timeLeft <= 0) {
+      clearInterval(interval);
+      interval = null;
+      running = false;
+      statusDot.classList.remove('active');
+      resetTimer();
+      // Auto-restart after flash
+      setTimeout(() => {
+        // Stay paused — wait for next bite
+        topLabel.textContent = 'take a bite!';
+        btn.classList.remove('running');
+      }, 500);
+    }
+  }
+
+  function handlePause() {
+    if (!running && !paused) return;
+    if (paused) {
+      // Resume
+      paused = false;
+      running = true;
+      statusDot.classList.add('active');
+      topLabel.textContent = 'chew & swallow';
+      pauseBtn.textContent = 'pause';
+      pauseBtn.classList.remove('paused');
+      interval = setInterval(tick, 1000);
+    } else {
+      // Pause
+      paused = true;
+      running = false;
+      clearInterval(interval);
+      interval = null;
+      statusDot.classList.remove('active');
+      topLabel.textContent = 'paused';
+      pauseBtn.textContent = 'resume';
+      pauseBtn.classList.add('paused');
+    }
+  }
+
+  function handleBite() {
+    bites++;
+    biteNum.textContent = bites;
+
+    // Reset and start
+    if (interval) clearInterval(interval);
+    paused = false;
+    timeLeft = TOTAL;
+    countdown.textContent = TOTAL;
+    updateRing(TOTAL);
+    setUrgent(false);
+    triggerFlash();
+    vibrate();
+
+    running = true;
+    statusDot.classList.add('active');
+    topLabel.textContent = 'chew & swallow';
+    btn.textContent = '+ another bite';
+    btn.classList.add('running');
+    pauseBtn.classList.add('visible');
+    pauseBtn.classList.remove('paused');
+    pauseBtn.textContent = 'pause';
+
+    interval = setInterval(tick, 1000);
+  }
+
+  // Init ring
+  updateRing(TOTAL);
+</script>
+</body>
+</html>
